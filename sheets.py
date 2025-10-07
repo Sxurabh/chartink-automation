@@ -27,45 +27,30 @@ def get_google_credentials():
         return Credentials.from_service_account_file(credentials_file, scopes=SCOPES)
 
 def format_worksheet(worksheet: gspread.Worksheet, data_written: List[List[Any]]):
-    """
-    Applies professional formatting to the worksheet after data is uploaded.
-    """
     print("🎨 Applying formatting to the worksheet...")
-
-    # Define formats
-    title_format = gsf.cellFormat(
-        textFormat=gsf.textFormat(bold=True, fontSize=12)
-    )
+    title_format = gsf.cellFormat(textFormat=gsf.textFormat(bold=True, fontSize=12))
     header_format = gsf.cellFormat(
-        backgroundColor=gsf.color(0.9, 0.9, 0.9), # Light grey background
+        backgroundColor=gsf.color(0.9, 0.9, 0.9),
         textFormat=gsf.textFormat(bold=True)
     )
-
-    # Find the rows that contain titles and headers to format them
     formatting_rules = []
     for i, row in enumerate(data_written):
         row_num = i + 1
         if not row: continue
         
-        if str(row[0]).startswith("Results from Scanner"):
+        # Check if the row is a custom title row
+        if str(row[0]).startswith("Monthly stocks"):
             formatting_rules.append((f"A{row_num}", title_format))
         elif row[0] == config.TABLE_HEADERS[0]:
             end_column = gspread.utils.rowcol_to_a1(row_num, len(row))
             formatting_rules.append((f"A{row_num}:{end_column}", header_format))
 
     gsf.format_cell_ranges(worksheet, formatting_rules)
-
     worksheet.columns_auto_resize(0, 6)
-    
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')
-    
-    # --- FIX: Wrap the single value in a list of lists ---
     worksheet.update('H1', [[f"Last Updated:\n{timestamp}"]])
-    
     worksheet.format('H1', {'textFormat': {'italic': True}, 'horizontalAlignment': 'RIGHT'})
-    
     print("✨ Formatting applied successfully.")
-
 
 def update_google_sheet(all_results: List[Dict[str, Any]]):
     if not any(result['data'] for result in all_results):
@@ -94,7 +79,11 @@ def update_google_sheet(all_results: List[Dict[str, Any]]):
                 continue
             if not is_first_scanner:
                 upload_data.append([])
-            upload_data.append([f"Results from Scanner: {result['url']}"])
+            
+            # --- IMPROVEMENT: Look up the friendly name from the config dictionary ---
+            scanner_title = config.SCANNER_MAPPING.get(result['url'], result['url']) # Fallback to URL if not found
+            upload_data.append([scanner_title])
+            
             upload_data.append(result['headers'])
             upload_data.extend(result['data'])
             is_first_scanner = False
