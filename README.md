@@ -1,6 +1,6 @@
 # Automated Stock Screener for ChartInk
 
-![Automation Workflow](https://i.imgur.com/gYfQG6s.png)
+
 
 ## 🚀 Overview
 
