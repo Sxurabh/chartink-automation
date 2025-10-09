@@ -28,7 +28,8 @@ class Settings(BaseModel):
         )
     ]
     expected_column_count: int = 7
-    table_headers: List[str] = ['Sr.', 'Stock Name', 'Symbol', 'Links', '% Chg', 'Price', 'Volume']
+    # 👇 "Sr." has been removed from the headers list
+    table_headers: List[str] = ['Stock Name', 'Symbol', 'Links', '% Chg', 'Price', 'Volume']
     retry_attempts: int = 3
     retry_delay_seconds: int = 5
     gcp_credentials: Dict = Field(default_factory=dict)

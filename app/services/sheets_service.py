@@ -94,20 +94,22 @@ class SheetsService:
                 horizontalAlignment='CENTER'
             )
             
+            # 👇 Ranges updated from 7 columns (A-G, J-P) to 6 columns (A-F, J-O)
             table_ranges = [
-                {'title_hdr': 'A{row}:G{row}', 'chg': 'E:E', 'nums': 'F:G', 'title_merge': 'A1:G1'},
-                {'title_hdr': 'J{row}:P{row}', 'chg': 'N:N', 'nums': 'O:P', 'title_merge': 'J1:P1'}
+                {'title_hdr': 'A{row}:F{row}', 'chg': 'D:D', 'nums': 'E:F', 'title_merge': 'A1:F1'},
+                {'title_hdr': 'J{row}:O{row}', 'chg': 'M:M', 'nums': 'N:O', 'title_merge': 'J1:O1'}
             ]
 
             all_values = worksheet.get_all_values()
             
             header_row_num = -1
             for row_idx, row in enumerate(all_values, 1):
-                if row and "Sr." in row:
-                    if "Sr." == row[0]:
+                # 👇 Updated check from "Sr." to "Stock Name"
+                if row and "Stock Name" in row:
+                    if "Stock Name" == row[0]:
                         format_cell_range(worksheet, table_ranges[0]['title_hdr'].format(row=row_idx), header_format)
                         if header_row_num == -1: header_row_num = row_idx
-                    if len(row) > 9 and "Sr." == row[9]:
+                    if len(row) > 8 and "Stock Name" == row[9]: # Check starts at col J (index 9)
                         format_cell_range(worksheet, table_ranges[1]['title_hdr'].format(row=row_idx), header_format)
 
             if header_row_num != -1:

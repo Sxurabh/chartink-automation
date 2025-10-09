@@ -61,7 +61,8 @@ class ScraperService:
             for row in rows:
                 all_cells = await row.query_selector_all("td")
                 visible_cells = all_cells[:settings.expected_column_count]
-                row_data = [await cell.inner_text() for cell in visible_cells]
+                # 👇 Slicing visible_cells[1:] to skip the first element (the "Sr." column)
+                row_data = [await cell.inner_text() for cell in visible_cells[1:]]
                 scraped_rows.append(row_data)
 
             next_button = page.locator('button:has-text("Next")')
