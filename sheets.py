@@ -22,12 +22,11 @@ def get_google_credentials():
 def format_worksheet(worksheet: gspread.Worksheet):
     print("🎨 Applying visual formatting...")
     worksheet.columns_auto_resize(0, 7)
-    worksheet.columns_auto_resize(9, 20)
     print("✨ Formatting applied.")
 
-def update_monthly_report(raw_scraped: List, ai_analyzed: List):
+def update_monthly_report(raw_scraped: List[Dict[str, Any]]):
     """
-    Updates the sheet with raw scraped data and the AI-scored analysis.
+    Updates the sheet with raw scraped data.
     """
     print("\n🔒 Authenticating with Google Sheets...")
     try:
@@ -40,36 +39,25 @@ def update_monthly_report(raw_scraped: List, ai_analyzed: List):
             worksheet = spreadsheet.worksheet(worksheet_title)
             worksheet.clear()
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=worksheet_title, rows="1000", cols="40")
+            worksheet = spreadsheet.add_worksheet(title=worksheet_title, rows="1000", cols="20")
 
         # Prepare and upload Raw Data
-        raw_upload_data = []
+        upload_data = []
         for result in raw_scraped:
             if not result.get('data'): continue
             scanner_name = config.SCANNER_MAPPING.get(result.get('url'), {}).get('name')
-            raw_upload_data.append([f"Raw Data from: {scanner_name}"])
-            raw_upload_data.append(result['headers'])
-            raw_upload_data.extend(result['data'])
-            raw_upload_data.append([])
-        if raw_upload_data:
-            worksheet.update('A1', raw_upload_data)
+            upload_data.append([f"Raw Data from: {scanner_name}"])
+            upload_data.append(result['headers'])
+            upload_data.extend(result['data'])
+            upload_data.append([]) # Add a blank row for spacing
         
-        # Prepare and upload AI-Scored Data
-        ai_upload_data = []
-        for result in ai_analyzed:
-            if not result.get('data'): continue
-            scanner_name = config.SCANNER_MAPPING.get(result.get('url'), {}).get('name')
-            ai_upload_data.append([f"AI-Scored Analysis for: {scanner_name}"])
-            ai_upload_data.append(result['headers'])
-            ai_upload_data.extend(result['data'])
-            ai_upload_data.append([])
-        if ai_upload_data:
-            worksheet.update('J1', ai_upload_data)
+        if upload_data:
+            worksheet.update('A1', upload_data)
         else:
-            worksheet.update('J1', [["No stocks were scored by the AI."]])
+            worksheet.update('A1', [["No stocks were found in the scan."]])
 
         format_worksheet(worksheet)
-        print("✅ Google Sheet updated with raw data and AI-scored analysis!")
+        print("✅ Google Sheet updated with raw data!")
 
     except Exception as e:
         print(f"❌ An error occurred while updating Google Sheet: {e}")
