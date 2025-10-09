@@ -1,75 +1,86 @@
 # analysis.py
 
 import yfinance as yf
-from typing import Tuple, Dict
+import json
+from typing import Dict, Any
 from openai import OpenAI
 import config
 
-def get_fundamental_analysis(ticker: str) -> Tuple[int, str]:
+def gather_data_for_ai(ticker: str) -> Dict[str, Any]:
     """
-    Analyzes a stock based on key fundamental metrics and returns a score and reasons string.
+    Gathers all the raw technical and fundamental data points required by the AI prompts.
     """
-    score = 0
-    reasons = []
     try:
         stock = yf.Ticker(f"{ticker}.NS")
         info = stock.info
-
-        # Metric 1: Positive Earnings Per Share (EPS)
-        if info.get('trailingEps', -1) > 0:
-            score += 1
-            reasons.append(f"Positive EPS ({info.get('trailingEps', 0):.2f})")
         
-        # Metric 2: Reasonable P/E Ratio
-        if 0 < info.get('trailingPE', 100) < 40:
-            score += 1
-            reasons.append(f"Good P/E ({info.get('trailingPE', 0):.2f})")
+        hist_monthly = stock.history(period="3y", interval="1mo")
+        hist_daily = stock.history(period="3mo", interval="1d")
+        
+        if len(hist_monthly) < 2:
+            return {"ticker": ticker, "error": "Not enough monthly data."}
 
-        # Metric 3: Low Debt to Equity Ratio
-        if info.get('debtToEquity', 101) < 100:
-            score += 1
-            reasons.append(f"Low Debt/Equity ({info.get('debtToEquity', 0)/100:.2f})")
-
-        # Metric 4: High Return on Equity (ROE)
-        if info.get('returnOnEquity', 0) > 0.15:
-            score += 1
-            reasons.append(f"High ROE ({info.get('returnOnEquity', 0):.2%})")
-
-        return score, ", ".join(reasons) if reasons else "No strong fundamentals."
+        last_month = hist_monthly.iloc[-2]
+        breakout_candle = hist_monthly.iloc[-1]
+        
+        hist_monthly['20EMA'] = hist_monthly['Close'].ewm(span=20, adjust=False).mean()
+        hist_monthly['50EMA'] = hist_monthly['Close'].ewm(span=50, adjust=False).mean()
+        
+        avg_volume_20d = hist_daily['Volume'][-20:].mean()
+        breakout_volume_ratio = breakout_candle['Volume'] / avg_volume_20d if avg_volume_20d > 0 else 1
+        
+        data = {
+            "ticker": ticker,
+            "breakout_confirmation": "intramonth" if breakout_candle['High'] > last_month['High'] else "no",
+            "price_vs_20EMA": "above" if breakout_candle['Close'] > hist_monthly['20EMA'].iloc[-1] else "below",
+            "price_vs_50EMA": "above" if breakout_candle['Close'] > hist_monthly['50EMA'].iloc[-1] else "below",
+            "breakout_volume_ratio": f"{breakout_volume_ratio:.2f}x",
+            "revenue_growth_yoy": f"{info.get('revenueGrowth', 0) * 100:.2f}%",
+            "roe": f"{info.get('returnOnEquity', 0) * 100:.2f}%",
+            "debt_to_equity": info.get('debtToEquity', 'N/A'),
+            "operating_cash_flow": info.get('operatingCashflow', 'N/A'),
+        }
+        if breakout_candle['Close'] > last_month['High']:
+            data["breakout_confirmation"] = "monthly_close"
+            
+        return data
 
     except Exception:
-        return 0, "Data Not Available"
+        return {"ticker": ticker, "error": "Failed to fetch complete data."}
 
-def get_ai_analysis(ticker: str) -> Tuple[str, str]:
+
+def get_ai_scanned_analysis(ticker_data: Dict[str, Any], api_key: str, custom_prompt: str) -> Dict[str, Any]:
     """
-    Calls the OpenRouter API to get an AI-generated investment thesis and risk assessment.
+    Calls the OpenRouter API with a custom prompt and data, expecting a JSON response.
     """
-    if not config.OPENROUTER_API_KEY:
-        return "API Key Not Configured", "API Key Not Configured"
+    if not api_key:
+        return {"error": "API Key Not Provided"}
     
     try:
-        stock = yf.Ticker(f"{ticker}.NS")
-        info = stock.info
-        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=config.OPENROUTER_API_KEY)
-        
-        prompt_data = (
-            f"Company: {info.get('longName', ticker)}\n"
-            f"Sector: {info.get('sector', 'N/A')}\n"
-            f"Business Summary: {info.get('longBusinessSummary', 'N/A')}"
-        )
+        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+        user_message = "\n".join([f"{key}: {value}" for key, value in ticker_data.items()])
         
         completion = client.chat.completions.create(
             model=config.AI_MODEL_NAME,
+            response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": "You are a sharp financial analyst. Provide a 2-sentence investment thesis, then list the top 2-3 potential risks using bullet points."},
-                {"role": "user", "content": prompt_data},
+                {"role": "system", "content": custom_prompt},
+                {"role": "user", "content": user_message},
             ],
-            temperature=0.6, max_tokens=200
+            temperature=0.0,
         )
-        response = completion.choices[0].message.content
-        parts = response.split("Risk")
-        thesis = parts[0].strip()
-        risks = "Risk" + parts[1].strip() if len(parts) > 1 else "No specific risks identified."
-        return thesis, risks
+        response_content = completion.choices[0].message.content
+        response_data = json.loads(response_content)
+
+        # --- FIX: Handle both list and dictionary responses from the AI ---
+        if isinstance(response_data, list):
+            # If AI returns a list as requested, take the first item.
+            return response_data[0]
+        elif isinstance(response_data, dict):
+            # If AI returns a single object, use it directly.
+            return response_data
+        else:
+            return {"ticker": ticker_data.get('ticker'), "error": "Unexpected AI response format."}
+
     except Exception as e:
-        return f"AI Analysis Failed: {e}", "AI Analysis Failed"
+        return {"ticker": ticker_data.get('ticker'), "error": f"AI Analysis Failed: {e}"}
