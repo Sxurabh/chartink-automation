@@ -1,3 +1,4 @@
+# .github/workflows/scheduled_scrape.yml
 name: Monthly ChartInk Stock Scraper
 
 on:
@@ -23,10 +24,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # --- IMPROVEMENT #1: CACHE PLAYWRIGHT BROWSERS ---
-      # This step saves the downloaded browser files. On subsequent runs,
-      # it will restore them from a cache instead of re-downloading,
-      # making the workflow run faster.
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         id: playwright-cache
@@ -40,9 +37,6 @@ jobs:
 
       - name: Run the scraper script
         env:
-          # --- IMPROVEMENT #2: LOAD SECRETS DIRECTLY INTO SCRIPT ---
-          # This is a cleaner way to handle credentials in Github Actions.
-          # We'll adjust sheets.py to read these new variable names.
           GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
           SHEET_NAME: ${{ secrets.SHEET_NAME }}
-        run: python main.py
+        run: python app/main.py # <-- Updated path to main script
