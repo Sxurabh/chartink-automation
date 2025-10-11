@@ -1,0 +1,28 @@
+# .github/workflows/clean_stocks.yml
+name: Manually Clean Dismissed Stocks
+
+on:
+  workflow_dispatch:
+
+jobs:
+  clean-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the cleanup script
+        env:
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          SHEET_NAME: ${{ secrets.SHEET_NAME }}
+        run: python -m app.main --clean-dismissed

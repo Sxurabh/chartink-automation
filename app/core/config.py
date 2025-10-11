@@ -15,6 +15,7 @@ class ScannerConfig(BaseModel):
 class Settings(BaseModel):
     """Main application settings."""
     sheet_name: str = Field(default="Trading Automation")
+    worksheet_name: str = "Scanned Stocks"  # <-- Explicit worksheet name
     scanners: List[ScannerConfig] = [
         ScannerConfig(
             name="Monthly stocks for Nifty 100",
@@ -27,7 +28,6 @@ class Settings(BaseModel):
             is_ipo=True
         )
     ]
-    # 👇 Headers remain the same with your new columns
     table_headers: List[str] = [
         'Stock Name', 'Symbol', 'Price', 'Volume',
         'Buying Price', 'Stoploss', 'Status'

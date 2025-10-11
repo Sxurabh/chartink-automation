@@ -1,24 +1,23 @@
 # app/services/sheets_service.py
 import os
 import gspread
-from datetime import datetime
 from typing import List, Dict, Any
 from google.oauth2.service_account import Credentials
 from gspread_formatting import (
     CellFormat, Color, TextFormat, set_frozen,
-    format_cell_range, NumberFormat
+    format_cell_range, NumberFormat, DataValidationRule, BooleanCondition,
+    set_data_validation_for_cell_range  # <-- Correct import
 )
 from ..core.config import settings
 from ..utils.logger import log
 
 class SheetsService:
-    """
-    A service class to handle interactions with Google Sheets.
-    """
     SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
     def __init__(self):
         self.client = self._authenticate()
+        self.spreadsheet = self.client.open(settings.sheet_name)
+        self.worksheet = self._get_or_create_worksheet()
 
     def _authenticate(self):
         log.info("🔒 Authenticating with Google Sheets...")
@@ -33,89 +32,103 @@ class SheetsService:
             creds = Credentials.from_service_account_file(credentials_file, scopes=self.SCOPES)
         return gspread.authorize(creds)
 
-    def update_monthly_report(self, processed_data: List[Dict[str, Any]]):
-        """
-        Updates the Google Sheet with processed data, placing tables side-by-side.
-        """
+    def _get_or_create_worksheet(self) -> gspread.Worksheet:
         try:
-            spreadsheet = self.client.open(settings.sheet_name)
-            worksheet_title = datetime.now().strftime("%B-%Y")
+            return self.spreadsheet.worksheet(settings.worksheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            log.info(f"Worksheet '{settings.worksheet_name}' not found. Creating it.")
+            return self.spreadsheet.add_worksheet(title=settings.worksheet_name, rows="1000", cols="50")
             
+    def update_scanned_stocks_report(self, all_scraped_data: List[Dict[str, Any]]):
+        log.info("--- Starting Google Sheet Update ---")
+        
+        table_defs = [
+            {'start': 'A', 'end': 'G', 'status': 'G'},
+            {'start': 'J', 'end': 'P', 'status': 'P'}
+        ]
+
+        final_sheet_data = []
+        max_rows = 0
+
+        for i, result in enumerate(all_scraped_data):
+            if i >= len(table_defs): break
+            
+            table_range = f"{table_defs[i]['start']}1:{table_defs[i]['end']}1000"
             try:
-                worksheet = spreadsheet.worksheet(worksheet_title)
-                worksheet.clear()
-            except gspread.exceptions.WorksheetNotFound:
-                worksheet = spreadsheet.add_worksheet(title=worksheet_title, rows="1000", cols="50")
-
-            start_cells = ['A1', 'J1']
-            if not processed_data:
-                worksheet.update('A1', [["No stocks were found in any scan."]])
-                return
-
-            for i, result in enumerate(processed_data):
-                if i >= len(start_cells):
-                    break
-                
-                if result and result.get('data'):
-                    scanner_name = result.get('scanner_name')
-                    table_data = [
-                        [f"Data from: {scanner_name}"],
-                        settings.table_headers,
-                        *result['data']
-                    ]
-                    worksheet.update(start_cells[i], table_data, value_input_option='USER_ENTERED')
-
-            self._format_worksheet(worksheet, num_tables=len(processed_data))
-            log.info("✅ Google Sheet updated successfully!")
-
-        except Exception as e:
-            log.error(f"❌ An error occurred while updating Google Sheet: {e}", exc_info=True)
-            raise
-
-    def _format_worksheet(self, worksheet: gspread.Worksheet, num_tables: int):
-        """
-        Applies advanced formatting to the new 7-column tables.
-        """
-        try:
-            log.info("🎨 Applying advanced formatting...")
+                existing_values = self.worksheet.get(table_range)
+                if len(existing_values) > 2:
+                    headers = existing_values[1]
+                    records = [dict(zip(headers, row)) for row in existing_values[2:] if any(row)]
+                else:
+                    records = []
+            except gspread.exceptions.APIError:
+                records = []
             
-            title_format = CellFormat(
-                backgroundColor=Color(0.2, 0.2, 0.2),
-                textFormat=TextFormat(bold=True, foregroundColor=Color(1, 1, 1), fontSize=12),
-                horizontalAlignment='CENTER'
-            )
-            header_format = CellFormat(
-                backgroundColor=Color(0.9, 0.9, 0.9),
-                textFormat=TextFormat(bold=True),
-                horizontalAlignment='CENTER'
-            )
+            bought_stocks = [list(rec.values()) for rec in records if rec.get('Status','').strip().lower() == 'bought']
+            bought_symbols = {stock[1] for stock in bought_stocks}
             
-            # Ranges for 7 columns (A-G, J-P)
-            table_ranges = [
-                {'title_hdr': 'A{row}:G{row}', 'nums': 'C:F', 'title_merge': 'A1:G1'},
-                {'title_hdr': 'J{row}:P{row}', 'nums': 'L:O', 'title_merge': 'J1:P1'}
-            ]
-
-            all_values = worksheet.get_all_values()
+            new_stocks = []
+            if result and result.get('data'):
+                for stock in result['data']:
+                    if stock[1] not in bought_symbols:
+                        new_stocks.append(stock)
             
-            header_row_num = 2 # Header is now always on the second row
-            set_frozen(worksheet, rows=header_row_num)
+            scanner_name = result.get('scanner_name', f'Scanner {i+1}')
+            table_data = [[f"Data from: {scanner_name}"], settings.table_headers, *bought_stocks, *new_stocks]
+            final_sheet_data.append(table_data)
+            max_rows = max(max_rows, len(table_data))
 
-            # Title and Header Formatting
-            for i in range(num_tables):
-                # Title
-                format_cell_range(worksheet, table_ranges[i]['title_merge'], title_format)
-                worksheet.merge_cells(table_ranges[i]['title_merge'])
-                # Header
-                format_cell_range(worksheet, table_ranges[i]['title_hdr'].format(row=header_row_num), header_format)
-                
-                # Number Formatting for Price, Volume, Buying Price, Stoploss
-                number_format_indian = NumberFormat(type='NUMBER', pattern="#,##,##0.00")
-                number_cell_format = CellFormat(numberFormat=number_format_indian)
-                format_cell_range(worksheet, table_ranges[i]['nums'], number_cell_format)
+        final_grid = [[""] * 20 for _ in range(max_rows)] 
+        
+        for r in range(max_rows):
+            if r < len(final_sheet_data[0]):
+                row_data = final_sheet_data[0][r]
+                final_grid[r][0:len(row_data)] = row_data
+            
+            if len(final_sheet_data) > 1 and r < len(final_sheet_data[1]):
+                row_data = final_sheet_data[1][r]
+                final_grid[r][9:9+len(row_data)] = row_data
 
-            worksheet.columns_auto_resize(0, 20)
-            log.info("✨ Advanced formatting applied successfully!")
+        self.worksheet.clear()
+        self.worksheet.update('A1', final_grid, value_input_option='USER_ENTERED')
 
-        except Exception as e:
-            log.warning(f"⚠️ Could not apply advanced formatting: {e}")
+        self._format_worksheet(num_tables=len(final_sheet_data))
+        log.info("✅ Google Sheet updated successfully!")
+
+    def clean_dismissed_stocks(self):
+        log.info("--- Starting Manual Cleanup of 'Dismissed' Stocks ---")
+        log.info("The main scheduled run automatically cleans 'Dismissed' stocks. No separate action needed.")
+        pass
+
+    def _format_worksheet(self, num_tables: int):
+        log.info("🎨 Applying formatting...")
+        title_format = CellFormat(backgroundColor=Color(0.2, 0.2, 0.2), textFormat=TextFormat(bold=True, foregroundColor=Color(1, 1, 1), fontSize=12))
+        header_format = CellFormat(backgroundColor=Color(0.9, 0.9, 0.9), textFormat=TextFormat(bold=True))
+        
+        table_ranges = [
+            {'title_hdr': 'A{row}:G{row}', 'nums': 'C:F', 'title_merge': 'A1:G1', 'status_col': 'G'},
+            {'title_hdr': 'J{row}:P{row}', 'nums': 'L:O', 'title_merge': 'J1:P1', 'status_col': 'P'}
+        ]
+
+        set_frozen(self.worksheet, rows=2)
+
+        status_validation_rule = DataValidationRule(
+            condition=BooleanCondition('ONE_OF_LIST', ['Bought', 'Dismissed']),
+            showCustomUi=True
+        )
+
+        for i in range(num_tables):
+            self.worksheet.merge_cells(table_ranges[i]['title_merge'], merge_type='MERGE_ALL')
+            format_cell_range(self.worksheet, table_ranges[i]['title_merge'], title_format)
+            format_cell_range(self.worksheet, table_ranges[i]['title_hdr'].format(row=2), header_format)
+            
+            num_format = NumberFormat(type='NUMBER', pattern="#,##,##0.00")
+            format_cell_range(self.worksheet, table_ranges[i]['nums'], CellFormat(numberFormat=num_format))
+
+            # Set data validation for the status column
+            status_range = f"{table_ranges[i]['status_col']}3:{table_ranges[i]['status_col']}1000"
+            # 👇 This is the corrected function call
+            set_data_validation_for_cell_range(self.worksheet, status_range, status_validation_rule)
+
+        self.worksheet.columns_auto_resize(0, 20)
+        log.info("✨ Formatting and status dropdowns applied successfully!")
