@@ -1,73 +1,54 @@
 # app/services/price_history_service.py
 import yfinance as yf
-import random
+import requests
 from typing import Tuple, Optional
 from ..utils.logger import log
 import time
 
-def load_proxies():
-    """Loads a list of proxies from proxy_list.txt."""
-    try:
-        with open('proxies.txt', 'r') as f:
-            proxies = [line.strip() for line in f if line.strip()]
-        if not proxies:
-            log.warning("⚠️ proxy_list.txt is empty. Proceeding without proxies.")
-            return []
-        log.info(f"✅ Loaded {len(proxies)} proxies from proxy_list.txt.")
-        return proxies
-    except FileNotFoundError:
-        log.warning("⚠️ proxy_list.txt not found. Proceeding without proxies.")
-        return []
-
 class PriceHistoryService:
     """
-    Fetches historical stock data using a robust yfinance approach with proxy rotation.
+    Fetches historical stock data using a robust yfinance approach.
     """
-    def __init__(self):
-        self.proxies = load_proxies()
-        self.max_attempts = min(len(self.proxies), 5) if self.proxies else 2
-
     def get_last_month_ohl(self, symbol: str) -> Optional[Tuple[float, float]]:
         """
-        Gets the previous month's high/low, rotating through proxies on failure.
+        Gets the previous full calendar month's high and low for a given stock symbol.
+        It uses yf.Ticker().history() and includes an enhanced retry mechanism for CI/CD environments.
         """
         cleaned_symbol = symbol.replace('&', '-').upper()
         ticker_symbol = f"{cleaned_symbol}.NS"
         
-        # Use a copy of the proxy list for this run to avoid reusing failed proxies
-        available_proxies = self.proxies[:]
-        
-        for attempt in range(self.max_attempts):
-            proxy = None
-            if available_proxies:
-                proxy = random.choice(available_proxies)
-                # Remove the chosen proxy so we don't reuse it on the next attempt
-                available_proxies.remove(proxy)
+        # Enhanced retry logic for cloud environments
+        max_attempts = 4
+        initial_delay_seconds = 5
 
+        for attempt in range(max_attempts):
             try:
-                log.info(f"Attempt {attempt + 1}/{self.max_attempts} for {ticker_symbol} using proxy: {proxy or 'None'}")
+                # Let yfinance handle its own session management
                 ticker = yf.Ticker(ticker_symbol)
                 
-                hist = ticker.history(
-                    period="2mo", 
-                    interval="1mo",
-                    proxy=f"http://{proxy}" if proxy else None
-                )
+                # Fetch the last 2 months of data on a monthly interval.
+                hist = ticker.history(period="2mo", interval="1mo")
                 
                 if not hist.empty and len(hist) >= 2:
+                    # The previous month's data is the second to last row
                     last_month_data = hist.iloc[-2]
                     high = round(last_month_data['High'], 2)
                     low = round(last_month_data['Low'], 2)
-                    log.info(f"✅ Fetched H/L for {ticker_symbol}: High={high}, Low={low}")
+                    log.info(f"✅ [Attempt {attempt + 1}] Fetched H/L for {ticker_symbol}: High={high}, Low={low}")
                     return high, low
+                elif not hist.empty:
+                    log.warning(f"⚠️ [Attempt {attempt + 1}] Only one month of data returned for {ticker_symbol}.")
                 else:
-                    log.warning(f"⚠️ No valid historical data returned for {ticker_symbol}.")
-
+                    log.warning(f"⚠️ [Attempt {attempt + 1}] No historical data returned for {ticker_symbol}.")
+            
             except Exception as e:
-                log.error(f"❌ Error for {ticker_symbol} with proxy {proxy}. Reason: {e}")
+                log.error(f"❌ Error fetching data for {ticker_symbol} on attempt {attempt + 1}. Reason: {e}")
 
-            if attempt < self.max_attempts - 1:
-                time.sleep(3) # Wait a few seconds before the next attempt
+            # If it's not the last attempt, wait before retrying
+            if attempt < max_attempts - 1:
+                delay = initial_delay_seconds * (attempt + 1) # Increasing delay (5s, 10s, 15s)
+                log.info(f"Retrying for {ticker_symbol} in {delay} seconds...")
+                time.sleep(delay)
 
-        log.error(f"❌ All {self.max_attempts} attempts failed for {ticker_symbol}.")
+        log.error(f"❌ All {max_attempts} attempts failed for {ticker_symbol}. Could not retrieve OHLC data.")
         return None
