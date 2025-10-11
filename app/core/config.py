@@ -27,15 +27,16 @@ class Settings(BaseModel):
             is_ipo=True
         )
     ]
-    expected_column_count: int = 7
-    # 👇 "Sr." has been removed from the headers list
-    table_headers: List[str] = ['Stock Name', 'Symbol', 'Links', '% Chg', 'Price', 'Volume']
+    # 👇 Headers remain the same with your new columns
+    table_headers: List[str] = [
+        'Stock Name', 'Symbol', 'Price', 'Volume',
+        'Buying Price', 'Stoploss', 'Status'
+    ]
     retry_attempts: int = 3
     retry_delay_seconds: int = 5
     gcp_credentials: Dict = Field(default_factory=dict)
 
     class Config:
-        # This allows Pydantic to populate models from environment variables
         env_file = '.env'
         env_file_encoding = 'utf-8'
 

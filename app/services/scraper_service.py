@@ -59,11 +59,17 @@ class ScraperService:
             
             rows = await page.query_selector_all("table tbody tr")
             for row in rows:
-                all_cells = await row.query_selector_all("td")
-                visible_cells = all_cells[:settings.expected_column_count]
-                # 👇 Slicing visible_cells[1:] to skip the first element (the "Sr." column)
-                row_data = [await cell.inner_text() for cell in visible_cells[1:]]
-                scraped_rows.append(row_data)
+                cells = await row.query_selector_all("td")
+                # 👇 Updated logic to cherry-pick columns by index
+                # This ensures we only get 'Stock Name', 'Symbol', 'Price', and 'Volume'
+                if len(cells) >= 7:
+                    row_data = [
+                        await cells[1].inner_text(), # Stock Name
+                        await cells[2].inner_text(), # Symbol
+                        await cells[5].inner_text(), # Price
+                        await cells[6].inner_text(), # Volume
+                    ]
+                    scraped_rows.append(row_data)
 
             next_button = page.locator('button:has-text("Next")')
             if await next_button.count() == 0 or await next_button.is_disabled():
