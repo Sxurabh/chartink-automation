@@ -40,6 +40,9 @@ async def main():
                 stock_name, symbol, price, volume,
                 buy_price, stop_loss, ""  # Status is initially empty
             ])
+            
+            # Add a small delay to avoid rate-limiting from yfinance
+            await asyncio.sleep(0.5)
         
         processed_results.append({
             "scanner_name": result['scanner'].name,
