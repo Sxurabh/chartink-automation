@@ -85,29 +85,37 @@ class SheetsService:
         final_sheet_data, max_rows, dismissed_count = [], 0, 0
 
         for i, table_def in enumerate(table_defs):
+            log.info(f"Checking Table {i+1} for 'Dismissed' stocks...")
             table_range = f"{table_def['start']}1:{table_def['end']}1000"
             try: existing_values = self.worksheet.get(table_range)
             except gspread.exceptions.APIError: existing_values = []
             
             if not existing_values or len(existing_values) < 2:
+                log.info(f"Table {i+1} is empty or has no data. Skipping.")
                 final_sheet_data.append([])
                 continue
 
             title_row, header_row, data_rows = [existing_values[0]], [existing_values[1]], existing_values[2:]
+            log.info(f"Processing {len(data_rows)} data rows in Table {i+1}.")
+            
             cleaned_data_rows = []
             for row in data_rows:
                 if len(row) > table_def['status_col_index'] and row[table_def['status_col_index']].strip().lower() == 'dismissed':
+                    symbol = row[1] if len(row) > 1 else 'N/A'
+                    log.warning(f"  -> Found 'Dismissed' stock: {symbol}. It will be REMOVED.")
                     dismissed_count += 1
-                else: cleaned_data_rows.append(row)
+                else:
+                    cleaned_data_rows.append(row)
             
             table_data = title_row + header_row + cleaned_data_rows
             final_sheet_data.append(table_data)
             max_rows = max(max_rows, len(table_data))
         
         if dismissed_count == 0:
-            log.info("✅ No stocks marked as 'Dismissed'. No changes made.")
+            log.info("✅ No stocks marked as 'Dismissed' were found. No changes made.")
             return
 
+        log.info(f"Found a total of {dismissed_count} 'Dismissed' stock(s). Preparing to rewrite the sheet...")
         final_grid = [[""] * 20 for _ in range(max_rows)]
         for r in range(max_rows):
             if r < len(final_sheet_data[0]):
