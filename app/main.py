@@ -16,6 +16,8 @@ async def main(clean_only: bool = False):
 
     if clean_only:
         log.info("--- Running in Cleanup-Only Mode ---")
+        # This is the corrected part that ensures the cleanup function is called.
+        sheets_service.clean_dismissed_stocks()
         log.info(f"--- Cleanup Finished in {time.time() - start_time:.2f} seconds ---")
         return
 
@@ -25,7 +27,6 @@ async def main(clean_only: bool = False):
 
     processed_results = []
     
-    # Use enumerate to know which table we are processing (0 for first, 1 for second)
     for table_index, result in enumerate(scraped_results):
         if not (result and result.get('data')):
             processed_results.append({
@@ -38,23 +39,18 @@ async def main(clean_only: bool = False):
         for stock_data in result['data']:
             stock_name, symbol, price, volume = stock_data
             
-            # Determine the correct columns based on the table index
             name_col = 'A' if table_index == 0 else 'J'
             symbol_col = 'B' if table_index == 0 else 'K'
             
-            # Create dynamic cell references using INDIRECT and ROW()
-            # This makes the formula work correctly in any row it's placed in.
             name_cell = f'INDIRECT("{name_col}" & ROW())'
             symbol_cell = f'INDIRECT("{symbol_col}" & ROW())'
             
             high_date_range = f'"high", EOMONTH(TODAY(), -2) + 1, EOMONTH(TODAY(), -1)'
             low_date_range = f'"low", EOMONTH(TODAY(), -2) + 1, EOMONTH(TODAY(), -1)'
 
-            # Formula part that fetches the data (NSE fallback to BSE)
             fetch_high = f'IFERROR(MAX(QUERY(GOOGLEFINANCE("NSE:"&{symbol_cell}, {high_date_range}), "SELECT Col2")), IFERROR(MAX(QUERY(GOOGLEFINANCE("BOM:"&{symbol_cell}, {high_date_range}), "SELECT Col2")), ""))'
             fetch_low = f'IFERROR(MIN(QUERY(GOOGLEFINANCE("NSE:"&{symbol_cell}, {low_date_range}), "SELECT Col2")), IFERROR(MIN(QUERY(GOOGLEFINANCE("BOM:"&{symbol_cell}, {low_date_range}), "SELECT Col2")), ""))'
             
-            # Final formula wrapped in a check to see if the stock name cell is blank
             buy_price_formula = f'=IF(NOT(ISBLANK({name_cell})), {fetch_high}, "")'
             stop_loss_formula = f'=IF(NOT(ISBLANK({name_cell})), {fetch_low}, "")'
             
