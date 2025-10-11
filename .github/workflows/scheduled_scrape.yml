@@ -4,7 +4,6 @@ name: Monthly ChartInk Stock Scraper
 on:
   workflow_dispatch:
   schedule:
-    # Runs at 05:30 IST on the 1st day of every month (00:00 UTC)
     - cron: '0 0 1 * *'
 
 jobs:
