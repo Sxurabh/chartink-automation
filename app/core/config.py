@@ -14,7 +14,7 @@ class ScannerConfig(BaseModel):
 
 class Settings(BaseModel):
     """Main application settings."""
-    sheet_name: str = Field(default="Trading Automation")
+    sheet_name: str = Field(default="5 EMA Tracker")
     worksheet_name: str = "Scanned Stocks"  # <-- Explicit worksheet name
     scanners: List[ScannerConfig] = [
         ScannerConfig(
@@ -23,7 +23,7 @@ class Settings(BaseModel):
             is_ipo=False
         ),
         ScannerConfig(
-            name="Monthly stocks from last 3 years IPO",
+            name="Monthly stocks from last 5 years IPO",
             url="https://chartink.com/screener/5ema-monthly-69",
             is_ipo=True
         )
