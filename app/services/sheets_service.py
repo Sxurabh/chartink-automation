@@ -36,65 +36,84 @@ class SheetsService:
             return self.spreadsheet.worksheet(settings.worksheet_name)
         except gspread.exceptions.WorksheetNotFound:
             log.info(f"Worksheet '{settings.worksheet_name}' not found. Creating it.")
-            return self.spreadsheet.add_worksheet(title=settings.worksheet_name, rows="1000", cols="50")
+            worksheet = self.spreadsheet.add_worksheet(title=settings.worksheet_name, rows="1000", cols="50")
+            self._format_worksheet(num_tables=2)
+            return worksheet
 
     def update_scanned_stocks_report(self, all_scraped_data: List[Dict[str, Any]]):
         log.info("--- Starting Google Sheet Update ---")
         
-        table_defs = [{'start': 'A', 'end': 'G', 'status_col_index': 6}, {'start': 'J', 'end': 'P', 'status_col_index': 6}]
-        final_sheet_data = []
-        max_rows = 0
-        dismissed_count = 0
+        table_defs = [
+            {'start_col_char': 'A', 'end_col_char': 'G', 'status_col_index': 6},
+            {'start_col_char': 'J', 'end_col_char': 'P', 'status_col_index': 6}
+        ]
 
         for i, result in enumerate(all_scraped_data):
-            if i >= len(table_defs): break
+            if i >= len(table_defs):
+                break
             
-            table_range = f"{table_defs[i]['start']}1:{table_defs[i]['end']}1000"
+            table_def = table_defs[i]
+            scanner_name = result.get('scanner_name', f'Scanner {i+1}')
+            
             try:
-                existing_values = self.worksheet.get(table_range)
-            except gspread.exceptions.APIError:
+                read_range = f"{table_def['start_col_char']}3:{table_def['end_col_char']}1000"
+                existing_values = self.worksheet.get(read_range, value_render_option='FORMULA')
+            except gspread.exceptions.APIError as e:
+                log.error(f"Could not read from sheet for {scanner_name}: {e}")
                 existing_values = []
             
-            # 1. Clean existing stocks by removing 'Dismissed' ones
-            cleaned_existing_stocks = []
-            if len(existing_values) > 2:
-                for row in existing_values[2:]:
-                    if len(row) > table_defs[i]['status_col_index'] and row[table_defs[i]['status_col_index']].strip().lower() == 'dismissed':
-                        dismissed_count += 1
-                    elif any(row):
-                        cleaned_existing_stocks.append(row)
+            num_existing_rows = len(existing_values)
+
+            # Map existing stocks by symbol, preserving their status
+            existing_stocks_map = {}
+            for row in existing_values:
+                if len(row) > 1 and row[1]:
+                    symbol = row[1]
+                    # Create a full row with blank strings for missing cells
+                    full_row = row + [''] * (len(settings.table_headers) - len(row))
+                    status = full_row[table_def['status_col_index']]
+                    existing_stocks_map[symbol] = {'row_data': full_row, 'status': status}
+
+            # Prepare a clean list of final stocks, excluding dismissed ones
+            final_stock_list = []
+            dismissed_count = 0
             
-            # 2. Filter new stocks to avoid duplicates
-            existing_symbols = {stock[1] for stock in cleaned_existing_stocks if len(stock) > 1}
-            new_stocks = []
+            # Process existing stocks
+            for symbol, data in existing_stocks_map.items():
+                if data['status'].strip().lower() == 'dismissed':
+                    dismissed_count += 1
+                    continue
+                final_stock_list.append(data['row_data'])
+
+            if dismissed_count > 0:
+                log.info(f"Identified {dismissed_count} 'Dismissed' stock(s) for removal in '{scanner_name}'.")
+
+            # Add new stocks
             if result and result.get('data'):
-                for stock_data in result['data']:
-                    if stock_data[1] not in existing_symbols:
-                        new_stocks.append(stock_data)
+                for new_stock in result['data']:
+                    symbol = new_stock[1]
+                    if symbol not in existing_stocks_map:
+                        final_stock_list.append(new_stock)
+
+            # --- KEY CHANGE: Overwrite and then clear leftovers ---
+            # 1. Update the main data block
+            if final_stock_list:
+                update_range = f"{table_def['start_col_char']}3:{table_def['end_col_char']}{len(final_stock_list) + 2}"
+                self.worksheet.update(update_range, final_stock_list, value_input_option='USER_ENTERED')
             
-            # 3. Combine title, header, cleaned existing stocks, and new stocks
-            scanner_name = result.get('scanner_name', f'Scanner {i+1}')
-            table_data = [[f"Data from: {scanner_name}"], settings.table_headers, *cleaned_existing_stocks, *new_stocks]
-            final_sheet_data.append(table_data)
-            max_rows = max(max_rows, len(table_data))
+            # 2. Clear any leftover rows if the new list is shorter than the old one
+            num_final_rows = len(final_stock_list)
+            if num_existing_rows > num_final_rows:
+                clear_start_row = 3 + num_final_rows
+                clear_end_row = 3 + num_existing_rows
+                leftover_range = f"{table_def['start_col_char']}{clear_start_row}:{table_def['end_col_char']}{clear_end_row}"
+                log.info(f"Clearing leftover data in range: {leftover_range}")
+                self.worksheet.batch_clear([leftover_range])
 
-        if dismissed_count > 0:
-            log.info(f"Removed {dismissed_count} 'Dismissed' stock(s).")
-        else:
-            log.info("No 'Dismissed' stocks to remove.")
+            log.info(f"✅ Updated sheet for '{scanner_name}' with {len(final_stock_list)} stocks.")
 
-        # 4. Rebuild the entire grid and update the sheet once
-        final_grid = [[""] * 20 for _ in range(max_rows)] 
-        for r in range(max_rows):
-            if r < len(final_sheet_data[0]):
-                final_grid[r][0:len(final_sheet_data[0][r])] = final_sheet_data[0][r]
-            if len(final_sheet_data) > 1 and r < len(final_sheet_data[1]):
-                final_grid[r][9:9+len(final_sheet_data[1][r])] = final_sheet_data[1][r]
-
-        self.worksheet.clear()
-        self.worksheet.update('A1', final_grid, value_input_option='USER_ENTERED')
-        self._format_worksheet(num_tables=len(final_sheet_data))
-        
+        # Re-apply titles, headers, and formatting (excluding status column)
+        self._format_worksheet(num_tables=len(all_scraped_data))
         log.info("✅ Google Sheet update finished successfully!")
 
     def _format_worksheet(self, num_tables: int):
@@ -103,21 +122,22 @@ class SheetsService:
         header_format = CellFormat(backgroundColor=Color(0.9, 0.9, 0.9), textFormat=TextFormat(bold=True))
         
         table_ranges = [
-            {'title_hdr': 'A{row}:G{row}', 'nums': 'C:F', 'title_merge': 'A1:G1'},
-            {'title_hdr': 'J{row}:P{row}', 'nums': 'L:O', 'title_merge': 'J1:P1'}
+            # Ranges updated to EXCLUDE the status column from any formatting
+            {'title_hdr': 'A{row}:F{row}', 'nums': 'C:F', 'title_merge': 'A1:G1'},
+            {'title_hdr': 'J{row}:O{row}', 'nums': 'L:O', 'title_merge': 'J1:P1'}
         ]
 
         set_frozen(self.worksheet, rows=2)
 
         for i in range(num_tables):
-            # Only apply title/header if they don't exist in the data we are about to write
-            # This check is simpler now, we just do it.
+            # Update titles and headers
             self.worksheet.merge_cells(table_ranges[i]['title_merge'], merge_type='MERGE_ALL')
             format_cell_range(self.worksheet, table_ranges[i]['title_merge'], title_format)
             format_cell_range(self.worksheet, table_ranges[i]['title_hdr'].format(row=2), header_format)
             
+            # Format number columns
             num_format = NumberFormat(type='NUMBER', pattern="#,##,##0.00")
             format_cell_range(self.worksheet, table_ranges[i]['nums'], CellFormat(numberFormat=num_format))
 
         self.worksheet.columns_auto_resize(0, 20)
-        log.info("✨ Base formatting applied successfully!")
+        log.info("✨ Formatting applied successfully, status column untouched.")
