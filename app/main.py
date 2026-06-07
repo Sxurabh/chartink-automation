@@ -1,7 +1,8 @@
 # app/main.py
 import asyncio
+import sys
 import time
-from .core.config import settings
+from .core.config import settings, TABLE_STRIDE, col_letter
 from .services.scraper_service import run_scrapers
 from .services.sheets_service import SheetsService
 from .utils.logger import log
@@ -28,8 +29,8 @@ async def main():
         for stock_data in result['data']:
             stock_name, symbol, price, volume = stock_data
             
-            name_col = 'A' if table_index == 0 else 'J'
-            symbol_col = 'B' if table_index == 0 else 'K'
+            name_col = col_letter(table_index * TABLE_STRIDE)
+            symbol_col = col_letter(table_index * TABLE_STRIDE + 1)
             
             name_cell = f'INDIRECT("{name_col}" & ROW())'
             symbol_cell = f'INDIRECT("{symbol_col}" & ROW())'
@@ -55,5 +56,4 @@ async def main():
     log.info(f"\n--- Automation Finished in {time.time() - start_time:.2f} seconds ---")
 
 if __name__ == "__main__":
-    # No longer need argparse, we can run the main function directly
     asyncio.run(main())

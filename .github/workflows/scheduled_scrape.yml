@@ -39,3 +39,14 @@ jobs:
           GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
           SHEET_NAME: ${{ secrets.SHEET_NAME }}
         run: python -m app.main
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          if [ -n "$WEBHOOK_URL" ]; then
+            curl -s -H "Content-Type: application/json" \
+              -d "{\"content\": \"ChartInk scraper workflow failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+              "$WEBHOOK_URL"
+          fi
