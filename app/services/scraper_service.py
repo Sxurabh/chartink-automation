@@ -115,7 +115,6 @@ async def scrape_single_url(browser: Browser, scanner: ScannerConfig, proxies: L
         context = None
         page = None
         try:
-            browser_type = random.choice(settings.browser_types)
             user_agent = (
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                 'AppleWebKit/537.36 (KHTML, like Gecko) '
