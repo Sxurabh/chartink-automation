@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-TABLE_WIDTH = 7
+TABLE_WIDTH = 6
 TABLE_GAP = 2
 TABLE_STRIDE = TABLE_WIDTH + TABLE_GAP
 
@@ -52,7 +52,7 @@ class Settings(BaseModel):
     scanners: List[ScannerConfig] = Field(default_factory=_load_scanners)
     table_headers: List[str] = [
         'Stock Name', 'Symbol', 'Price', 'Volume',
-        'Buying Price', 'Stoploss', 'Status'
+        'Buying Price', 'Stoploss'
     ]
     retry_attempts: int = 3
     retry_delay_seconds: int = 5

@@ -38,7 +38,7 @@ async def main():
 
         processed_stock_data = []
         for stock_data in result['data']:
-            stock_name, symbol, price, volume = stock_data
+            stock_name, symbol, _, _ = stock_data
 
             name_col = col_letter(table_index * TABLE_STRIDE)
             symbol_col = col_letter(table_index * TABLE_STRIDE + 1)
@@ -49,13 +49,16 @@ async def main():
             high_date_range = f'"high", EOMONTH(TODAY(), -2) + 1, EOMONTH(TODAY(), -1)'
             low_date_range = f'"low", EOMONTH(TODAY(), -2) + 1, EOMONTH(TODAY(), -1)'
 
+            price_formula = f'=IF(NOT(ISBLANK({name_cell})), IFERROR(GOOGLEFINANCE("NSE:"&{symbol_cell}, "price"), IFERROR(GOOGLEFINANCE("BOM:"&{symbol_cell}, "price"), "")), "")'
+            volume_formula = f'=IF(NOT(ISBLANK({name_cell})), IFERROR(GOOGLEFINANCE("NSE:"&{symbol_cell}, "volume"), IFERROR(GOOGLEFINANCE("BOM:"&{symbol_cell}, "volume"), "")), "")'
+
             fetch_high = f'IFERROR(MAX(QUERY(GOOGLEFINANCE("NSE:"&{symbol_cell}, {high_date_range}), "SELECT Col2")), IFERROR(MAX(QUERY(GOOGLEFINANCE("BOM:"&{symbol_cell}, {high_date_range}), "SELECT Col2")), ""))'
             fetch_low = f'IFERROR(MIN(QUERY(GOOGLEFINANCE("NSE:"&{symbol_cell}, {low_date_range}), "SELECT Col2")), IFERROR(MIN(QUERY(GOOGLEFINANCE("BOM:"&{symbol_cell}, {low_date_range}), "SELECT Col2")), ""))'
 
             buy_price_formula = f'=IF(NOT(ISBLANK({name_cell})), {fetch_high}, "")'
             stop_loss_formula = f'=IF(NOT(ISBLANK({name_cell})), {fetch_low}, "")'
 
-            processed_stock_data.append([stock_name, symbol, price, volume, buy_price_formula, stop_loss_formula, ""])
+            processed_stock_data.append([stock_name, symbol, price_formula, volume_formula, buy_price_formula, stop_loss_formula])
 
         processed_results.append({"scanner_name": result['scanner'].name, "data": processed_stock_data})
         log.info(f"Processed {len(processed_stock_data)} new stocks for '{result['scanner'].name}'.")

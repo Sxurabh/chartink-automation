@@ -95,24 +95,13 @@ class SheetsService:
             num_existing_rows = len(existing_values)
 
             existing_stocks_map = {}
-            status_col = TABLE_WIDTH - 1
             for row in existing_values:
                 if len(row) > 1 and row[1]:
                     symbol = row[1]
                     full_row = row + [''] * (TABLE_WIDTH - len(row))
-                    status = full_row[status_col]
-                    existing_stocks_map[symbol] = {'row_data': full_row, 'status': status}
+                    existing_stocks_map[symbol] = full_row
 
-            final_stock_list = []
-            dismissed_count = 0
-            for symbol, data in existing_stocks_map.items():
-                if data['status'].strip().lower() == 'dismissed':
-                    dismissed_count += 1
-                    continue
-                final_stock_list.append(data['row_data'])
-
-            if dismissed_count > 0:
-                log.info(f"Identified {dismissed_count} 'Dismissed' stock(s) for removal in '{scanner_name}'.")
+            final_stock_list = list(existing_stocks_map.values())
 
             if result and result.get('data'):
                 for new_stock in result['data']:
@@ -147,16 +136,16 @@ class SheetsService:
         for i in range(num_tables):
             start_letter, end_letter = self._table_range(i, 1)
             title_merge = f"{start_letter}1:{end_letter}1"
-            header_excl_status = f"{start_letter}2:{col_letter(i * TABLE_STRIDE + TABLE_WIDTH - 2)}2"
+            header_range = f"{start_letter}2:{end_letter}2"
             nums_start = col_letter(i * TABLE_STRIDE + 2)
-            nums_end = col_letter(i * TABLE_STRIDE + TABLE_WIDTH - 2)
+            nums_end = col_letter(i * TABLE_STRIDE + TABLE_WIDTH - 1)
 
             self.worksheet.merge_cells(title_merge, merge_type='MERGE_ALL')
             format_cell_range(self.worksheet, title_merge, title_format)
-            format_cell_range(self.worksheet, header_excl_status, header_format)
+            format_cell_range(self.worksheet, header_range, header_format)
 
             num_format = NumberFormat(type='NUMBER', pattern="#,##,##0.00")
             format_cell_range(self.worksheet, f"{nums_start}:{nums_end}", CellFormat(numberFormat=num_format))
 
         self.worksheet.columns_auto_resize(0, max(20, num_tables * TABLE_STRIDE))
-        log.info("Formatting applied successfully, status column untouched.")
+        log.info("Formatting applied successfully.")
