@@ -28,7 +28,6 @@ def _next_proxy(proxies: List[Dict[str, str]]):
         return None
     proxy = proxies[_PROXY_INDEX % len(proxies)]
     _PROXY_INDEX += 1
-    random.shuffle(proxies)
     return proxy
 
 async def _extract_data_from_pages(page: Page) -> List[List[str]]:
@@ -173,6 +172,8 @@ async def run_scrapers(scanners: List[ScannerConfig], proxies: List[Dict[str, st
         async def _scrape_with_semaphore(scanner):
             async with semaphore:
                 return await scrape_single_url(browser, scanner, proxies)
+
+        random.shuffle(proxies)
 
         tasks = [_scrape_with_semaphore(scanner) for scanner in scanners]
         results = await asyncio.gather(*tasks)
