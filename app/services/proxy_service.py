@@ -9,9 +9,7 @@ class ProxyValidator:
     async def _test_proxy(proxy_str: str, timeout: int) -> Optional[Dict[str, str]]:
         try:
             raw = proxy_str
-            if raw.startswith("socks4://") or raw.startswith("socks5://"):
-                host_port = raw.split("://", 1)[1]
-            elif raw.startswith("http://"):
+            if "://" in raw:
                 host_port = raw.split("://", 1)[1]
             else:
                 host_port = raw
@@ -25,9 +23,7 @@ class ProxyValidator:
             writer.close()
             await writer.wait_closed()
 
-            if raw.startswith("socks4://") or raw.startswith("socks5://"):
-                return {"server": raw}
-            return {"server": f"http://{raw}"}
+            return {"server": raw if "://" in raw else f"http://{raw}"}
         except (ValueError, OSError, asyncio.TimeoutError):
             return None
 
