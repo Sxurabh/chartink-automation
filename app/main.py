@@ -71,17 +71,19 @@ async def main():
     elapsed = time.time() - start_time
     log.info(f"--- Automation Finished in {elapsed:.2f} seconds ---")
 
-def _load_proxies_raw() -> list:
+PROXIES_FILE = 'proxies.txt'
+
+def _load_proxies_raw() -> list[str]:
     proxies = []
     try:
-        with open('proxies.txt', 'r') as f:
+        with open(PROXIES_FILE, 'r') as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
                 proxies.append(line)
     except FileNotFoundError:
-        pass
+        log.warning(f"{PROXIES_FILE} not found — running without proxies")
     return proxies
 
 if __name__ == "__main__":
