@@ -56,6 +56,10 @@ class Settings(BaseModel):
     ]
     retry_attempts: int = 3
     retry_delay_seconds: int = 5
+    max_concurrent_scanners: int = Field(default=4, description="Max scanners to run in parallel")
+    proxy_validate_timeout: int = Field(default=3, description="TCP connect timeout in seconds for proxy validation")
+    proxy_validate_max: int = Field(default=0, description="Max proxies to validate (0 = all)")
+    browser_types: List[str] = Field(default=["firefox", "chromium"], description="Browser engines to randomize across")
     gcp_credentials: Dict = Field(default_factory=dict)
 
     class Config:
